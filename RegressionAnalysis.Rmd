@@ -1,0 +1,209 @@
+---
+title: "Ex1_KevinRojas"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dummies)
+library(nortest)
+library("ggpubr")
+library(ggplot2)
+library(tidyr)
+library(purrr)
+library(corrplot)
+library(glmnet)
+library(FactoMineR)
+library(dplyr)
+library(factoextra)
+```
+
+# Pregunta 1
+# Parte a
+Buscamos tablas de datos en la página de internet kaggle que contiene muchos conjuntos de datos libres. Al final decidimos usar los datos del clima de Szeged, una ciudad de Hungría, entre el 2006 al 2016. Esta cuenta con 96453 filas y 12 columnas lo que la hace apta para utilizar regresión lineal; sin embargo debido a que son muchisimas filas hemos decidido usar una cantidad menor lo cual se explicara con más detalle más adelante. Vamos a intentar predecir la temperatura aparente en base a la información dada.
+
+# Parte b
+Para esta tablas de datos decidimos eliminar las variables: formatted date, loud cover y daily summary. En el caso de la variable daily summary esta es casi identica a la variable summary. La variable formatted date preferimos omitirla ya que no tiene un efecto en la temperatura, ya que si intentaramos tomar en cuenta por ejemplo las temporadas del año y cosas similares esta información se encuentra implicita en otras estadísticas. Finalmente la variable loud cover es una variable llena de 0's así que no aporta nada al análisis.
+```{r}
+
+DatosClima <- read.csv('weatherHistory.csv',header = TRUE, sep = ',', dec = '.')
+#Vamos a eliminar las variables summary, formatted date, loud cover y daily summary despues explica mejor
+DatosClima <- DatosClima[,-c(10,12)]
+DatosClima <- DatosClima[1:(dim(DatosClima)[1]*.2),]
+subset<-vector("logical",nrow(DatosClima))
+for(i in 1: dim(DatosClima)[1]){
+  if((substring(DatosClima$Formatted.Date[i],1,4) == "2007" && substring(DatosClima$Formatted.Date[i],12,13)=="16")){
+    subset[i]=TRUE
+  }
+}
+DatosClima <- DatosClima[subset,]
+DatosClima = DatosClima[order(DatosClima$Formatted.Date),]
+rownames(DatosClima)= (1:365)
+DatosClima<-DatosClima[,-1]
+dim(DatosClima)
+write.csv(DatosClima,"datosFinales.csv", row.names = FALSE)
+
+```
+Se decidió usar una sola medición por día durante todo el año 2007, tras esta limpieza tenemos una matriz con 365 filas y 9 columnas. Se decidió tomar los datos de las 4 de la tarde para todos los días. Se experimentó con otros tamaños como usar los datos de un año completo con todas las horas diarias, sin embargo no se observaron cambios importantes en los resultados.
+# Parte c
+Esta tabla tiene información sobre el clima de Szeged entre los años 2006 a 2016. Las filas en esta matriz representaqn un día y una hora en que se hicieron mediciones. Tras la limpieza tenemos 9 columnas, las cuales representan lo siguiente:  
+**Summary**: Caracteristicas del tiempo atmosférico observado ese día(Niebla, nubes,viento,etc).    
+**Precip.Type**: Tipo de precipitación que se presentó ese día (lluvia, nieve, etc).  
+**Temperature..C.**: Temperatura registrada ese día en grados centigrados.  
+**Apparent.Tmperature..C.**: Temperatura aparente registrada ese día.  
+**Humidity**: Humedad medida en higómetros.  
+**Wind.Speed.km.h**: Velocidad del aire en kilometros del aire.  
+**Wind.Bearing..degrees.**: dirección del viento en grados.  
+**Visibitlity..km**:Distancia a la que un objeto todavía puede ser percibido.  
+**Pressure..millibar**: Presión en milibars.  
+Tras la limpieza de datos tenemos una tabla de 365 filas y 9 columnas. Hemos decidido predecir la variable de Temperatura Aparente. 
+
+# Parte d  
+Para el analisis exploratorio inicial contruimos la siguiente tabla a modo de resumen:
+```{r}
+mean<-vector("double",ncol(DatosClima))
+standardDeviation<-vector("double",ncol(DatosClima))
+mean<-vector("double",ncol(DatosClima))
+normalityTest <- vector("double", ncol(DatosClima))
+
+for(i in 1:ncol(DatosClima)){
+  if(is.numeric(DatosClima[,i])){
+    mean[i] <- mean(DatosClima[,i])
+    standardDeviation[i] <- sd(DatosClima[,i])
+    normalityTest[i] <- ad.test(DatosClima[,i])$p.value
+  }
+}
+resumen <- data.frame()
+resumen <- cbind("Variable" = colnames(DatosClima), "Promedio" = mean, "Desviacion Estandar" = standardDeviation, "Test de Normalidad" = normalityTest)
+resumen
+```
+Para la primera y segunda variable debemos recordar que estas son categoricas por eso no se hicieron calculos sobre ellas. Vemos que la temperatura toma valores que de $16\pm 10.40$ grados centigrados durante el año. La variable que más cambio presenta en los datos es la dirección del viento, lo cual tiene sentido ya que a lo largo del año este cambia su dirección significativamente. De los test de normalidad vemos que con alta confianza los datos no se encuentran distribuidos de manera normal, pues toman valores menores a $0.05$. Aún así graficamos sus distribuciones para analizarlo a mano:
+```{r}
+DatosClima %>% keep(is.numeric) %>% gather() %>%ggplot(aes(value))+facet_wrap(~key,scales  = "free")+geom_density()
+```
+
+Vemos Claramente que ninguna variable se encuentra distribuida de manera normal.Ahora de la gráfica de correlaciones vemos que:
+```{r}
+corrplot(cor(DatosClima%>%keep(is.numeric)))
+```
+
+Los datos más importantes que sacamos de este gráfico es que la temperatura y la temperatura aparente estan fuertemente correlacionadas, como era de esperarse. Mientras que la humedad esta fuertemente correlacionada de manera negativa. Finalmente buscamos datos atípicos mediante el uso de diagramas de caja:
+```{r}
+DatosClima %>% keep(is.numeric) %>% gather() %>%ggplot(aes(value))+facet_wrap(~key,scales  = "free")+geom_boxplot()
+
+```
+
+Vemos que la mayoría de datos atípicos se encuentran en la variable de visibilidad y velocidad del viento.
+
+# Parte e
+Corremos las 3 regresiones solicitadas usamos 70% de los datos para entrenamiento y el restante 30% para pruebas.
+```{r}
+set.seed(1)
+datosClimaDum <- dummy.data.frame(DatosClima)
+n <- nrow(datosClimaDum)
+y <- datosClimaDum$Apparent.Temperature..C.
+x <- model.matrix(Apparent.Temperature..C.~.,datosClimaDum)[,-1]
+muestra <- sample(1:n,n*.70)
+test <- (-muestra)
+regresion.simple <- lm(Apparent.Temperature..C. ~ ., data =datosClimaDum)
+#inserte interpretacion aqui
+regresion.lasso <- glmnet(x[muestra,],y[muestra],alpha = 1)
+regresion.ridge <- glmnet(x[muestra,],y[muestra],alpha = 0)
+
+lasso.cv <- cv.glmnet(x[muestra,],y[muestra],alpha = 1)
+mejor.lambda.lasso <- lasso.cv$lambda.min
+
+ridge.cv <- cv.glmnet(x[muestra,],y[muestra],alpha = 0)
+mejor.lambda.ridge <- ridge.cv$lambda.min
+summary(regresion.simple)
+```
+De los coeficientes notamos que la temperatura y la temperatura aparente son casi una función identidad, como era de esperarse. La humedad es la siguiente variable con mayor importancia para la regresión. Notamos que el tipo de presentación y el resumen nos dan "pequeños" cambios, debemos notar que son pequeños pues para estas variables categoricas sencillamente tenemos valores en el conjunto ${0,1}$ así que cuando se presenta una de esas condiciones solo cambia como se percibe la temperatura por un valor constante. Vemos que las variables "nieve" y "ventoso y parcialmente nublado" no tiene coeficientes debido a singularidades, lo cual tiene que ver con que son variables complementarias.Para verificar lo que sucede en lasso decidimos que la mejor manera de hacerlo era con el gráfico: 
+```{r}
+plot(regresion.lasso,"lambda",label = TRUE)
+abline(v = log(mejor.lambda.lasso),lwd = 3,lty = 3)
+```
+
+Vemos del gráfico que el mejor método para lasso tiene tan solo 5 variables, lo cual es un gran logro pues esta eliminando 4 variables(donde consideramos el resumen como una sola).
+
+# Parte e
+Calculamos los errores de los 3 métodos y los resumimos en la tabla de residuos, para ello usamos las funciones programadas en clases.
+```{r}
+RSS <- function(Pred,Real) {
+  ss <- sum((Real-Pred)^2)
+  return(ss)
+}
+RSE<-function(Pred,Real,NumPred) {
+  N<-length(Real)-NumPred-1  # <- length(Real)-(NumPred+1)
+  ss<-sqrt((1/N)*RSS(Pred,Real))
+  return(ss)
+}
+MSE <- function(Pred,Real) {
+  N<-length(Real)
+  ss<-(1/N)*RSS(Pred,Real)
+  return(ss)
+}
+error.relativo <- function(Pred,Real) {
+  ss<-sum(abs(Real-Pred))/sum(abs(Real))
+  return(ss)
+}
+pred.ridge <- predict(regresion.ridge,s = mejor.lambda.ridge, newx = x[test,])
+pred.lasso <- predict(regresion.lasso, s = mejor.lambda.lasso,newx = x[test,])
+suppressWarnings(
+  pred.clasica <- predict(regresion.simple,newdata = datosClimaDum[test,])
+)
+
+p = dim(x)[2]-1
+Modelo<- c("Ridge","Lasso","Clasica")
+ResiduoCuadraticos <- c(RSS(pred.ridge,y[test]),RSS(pred.lasso,y[test]),RSS(pred.clasica,y[test]))
+ResiduoEstandar <- c(RSE(pred.ridge,y[test],p),RSE(pred.lasso,y[test],p-2),RSE(pred.clasica,y[test],p))
+ResiduoPromedio <- c(MSE(pred.ridge,y[test]),MSE(pred.lasso,y[test]),MSE(pred.clasica,y[test]))
+ResiduoRelativos <- c(error.relativo(pred.ridge,y[test]),error.relativo(pred.lasso,y[test]),error.relativo(pred.clasica,y[test]))
+Residuos<-data.frame(Modelo,ResiduoCuadraticos,ResiduoEstandar, ResiduoPromedio,ResiduoRelativos)
+Residuos
+```
+Vemos que la regresión clásica termina siendo la mejor en terminos de errores. Aunque no por mucho ya que en comparación con el método lasso son casi equivalentes, mientras que el último tiene el valor agregado de eliminar variables, por lo cual consideramos que el método de lasso es el mejor módelo.
+
+# Parte f
+El modelo generado es suficientemente bueno ya que cuenta con menos de 5 variables y es el óptimo de los que podríamos elegir, así que mantenemos este como nuestra decisión. En esta caso el valor para lamba y sus coeficientes vienen dados por:
+```{r}
+mejor.lambda.lasso
+a<-coef(regresion.lasso)[,52]
+a<-a[a!=0]
+a
+```
+
+Las medidas de error ya las hemos presentado. Notamos que los coeficientes son similares, se ha eliminado la variable humedad lo cual es algo inesperado pero que nos dice que esta información se encuentra implícita en otras caracteristias.
+
+# Pregunta 2
+
+# Parte a
+Para esta parte usamos la misma tabla de datos de la primera pregunta. Tras la limpieza nuestra tabla contaba con 2 variables categoricas, 9 columnas y 365 filas, lo cual la hace apta para un análisis en componentes principales.
+
+# Parte e
+```{r}
+acp = PCA(DatosClima%>%keep(is.numeric), scale.unit = TRUE, ncp = 5 , graph = FALSE)
+plot(acp, axes = c (1,2), select = "cos2 0.05")
+fviz_pca_var(acp, axes = c(1,2))
+```
+
+Notamos claramente cuatro clusters, esencialmente dividido por cuadrantes. Tras pensar en el asunto esto es natural ya que corresponde a las distintas temporadas que se presentan en Szeged. En el circulo de correlaciones vemos 3 clusters principalmente, las caracteristicas referentes al viento, la temperatura y la humedad. Estas últimas que se encuentran relacionadas de manera negativa y el viento por su parte que no parece tener una correlación con ninguna ya que presenta ángulos de casi $90°$ con respecto a estas. Ahora si vemos la sobreposición de ambos gráficos notamos que cerca del eje x positivo tenemos numeros al rededor de 200, esta area corresponde a las temperaturas más altas. Dichas fechas corresponden a meses alrededor de agosto, donde la temperatura es mayor. Similarmente al lado opuesto nos vamos más hacia el final del año, fechas en que aumenta la humedad. Vemos de esta manera que el análisis en componentes principales esta separando las fechas que comparten propiedades atmosféricas en común. Ahora notamos que las variables mal representadas se encuentran asociadas a presione más altas, para analizar estas variables veamos el plano 1,3.
+
+# Parte f
+```{r}
+plot(acp, axes = c (1,3), select = "cos2 0.05")
+fviz_pca_var(acp, axes = c(1,3))
+```
+
+Vemos que las variables que se encontraban mal representadas, que estaban alrededor de la presión ahora se encuentran representadas en un cluster pequeño en la esquina inferior derecha del plano. Vemos entonces que las medidas con poca presión y altas temperaturas no se pueden representar debidamente en este plano, sin embargo estos parecen ser días aislados ya que no formam un cluster más grande con los otros días del mes o la semana.
+
+# Parte g
+Finalmente corremos el análisis en componentes principales para todas las variables.
+```{r}
+acp2 = PCA(datosClimaDum, scale.unit = TRUE, ncp = 5 , graph = FALSE)
+plot(acp2, axes = c (1,2), select = "cos2 0.05")
+fviz_pca_var(acp2, axes = c(1,2))
+```
+
+Vemos que para este tenemos muchas más variables, principalmente debido a la variable summary que cuenta con varias categorias. Notamos en el plano principal que se forman al menos 4 clusters, una vez más se pueden diferenciar por cuadrantes y con una interpretación similar a la anterior. Lo que podemos notar al comparar con el círculo de correlaciones, es la importancia del resumen diario, ya que por ejemplo el cluster de abajo a la izquierda se relaciona con dias en que se presenta nieve y niebla algo que no podíamos notar del pca anterior. Tambíen observamos correlaciones entre las variables referentes al viento y los días nublados, estando también relativamente cerca de los días en que se presentó lluvia. Notamos que los cluster estan asociados prinpalmente entonces a su tipo de precipitación(cluster de arriba a la derecha y abajo a la izquierda) y a su temperatura/humedad en los cluster restante. Vemos que lo último era información que teníamos del pca anterior, sin embargo ahora pudimos delimitar de mejor manera los otros dos cluster. Por ello considero que el PCA que incluye a las variables categóricas es más interesante, aunque se nota que la inercia total del plano es mucho menor.
+
+

@@ -1,0 +1,434 @@
+---
+title: "Correspondence Analysis and Clustering"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(FactoMineR)
+library(factoextra)
+library("dummies")
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(fmsb)
+library(cluster)
+
+
+```
+
+## Correspondence Analysis
+
+### Parte a
+
+En este caso buscamos la tabla "5-Day Data Challenge Sign-Up Survey Responses" que se puede encontrar en: [Kaggle](https://www.kaggle.com/rtatman/5day-data-challenge-signup-survey-responses/data). Esta contiene las respuestas a una encuesta que se realizó a las personas que se inscribían en un concurso en línea. Está formada por 9 variables y 3986 individuos. De sus variables 7 son categóricas y las otras 2 son booleanas, entonces pueden convertirse o tratarse como categóricas fácilmente.
+
+### Parte b
+
+Incluimos en esta parte tanto la limpieza como la traducción de los datos. En esta parte eliminamos las variables "animal" y "rand" ya que no son de nuestro interés y eliminamos aquellas entradas que se encuentran vacías. Además eliminamos la variable "which challenge" ya que era redundante y su información estaba incluida en las variables "regression" y "introductory".
+
+```{r}
+encuesta = read.table("survey_responses.csv", sep = ",", dec = ".",header = TRUE, row.names =  1, stringsAsFactors = FALSE)
+colnames(encuesta) = c("Regresión","Introductorio","Desafío","Curso de Estadística","Ha usado regresión antes","Experiencia Programando","Motivo de interés en ciencia de datos","Animal","random")
+
+encuesta$Regresión[encuesta$Regresión == FALSE] <- "No"
+encuesta$Regresión[encuesta$Regresión == TRUE] <- "Si"
+
+encuesta$Introductorio[encuesta$Introductorio == FALSE] <- "No"
+encuesta$Introductorio[encuesta$Introductorio == TRUE] <- "Si"
+
+encuesta$Desafío[encuesta$Desafío == "Regression; Introductory"] <- "Regresión Introductoria"
+encuesta$Desafío[encuesta$Desafío == "Regression"] <- "Regresión"
+encuesta$Desafío[encuesta$Desafío == "Introductory"] <- "Introductorio"
+
+encuesta$`Curso de Estadística`[encuesta$`Curso de Estadística` == "Nope"] <- "No"
+encuesta$`Curso de Estadística`[encuesta$`Curso de Estadística` == "Yes, but I've forgotten everything"] <- "Si pero no recuerdo nada"
+encuesta$`Curso de Estadística`[encuesta$`Curso de Estadística` == "Yep"] <- "Si"
+
+encuesta$`Ha usado regresión antes`[encuesta$`Ha usado regresión antes` == "Nope"] <- "No"
+encuesta$`Ha usado regresión antes`[encuesta$`Ha usado regresión antes` == "Yep"] <- "Si"
+
+encuesta$`Experiencia Programando`[encuesta$`Experiencia Programando` == "I have a whole lot of experience"] <- "Mucha experiencia"
+encuesta$`Experiencia Programando`[encuesta$`Experiencia Programando` == "I have a little bit of experience"] <- "Poca experiencia"
+encuesta$`Experiencia Programando`[encuesta$`Experiencia Programando` == "I have quite a bit of experience"] <- "Suficiente experiencia"
+encuesta$`Experiencia Programando`[encuesta$`Experiencia Programando` == "Nope"] <- "Ninguna experiencia"
+
+
+encuesta$`Motivo de interés en ciencia de datos`[encuesta$`Motivo de interés en ciencia de datos`== "I want to get a job where I use data science"] <- "Quiero conseguir un trabajo en ciencia de datos"
+encuesta$`Motivo de interés en ciencia de datos`[encuesta$`Motivo de interés en ciencia de datos`== "Just curious"] <- "Curiosidad"
+encuesta$`Motivo de interés en ciencia de datos`[encuesta$`Motivo de interés en ciencia de datos`== "It will help me in my current job"] <- "Me ayudaría en mi trabajo actual"
+
+encuesta = encuesta[,-c(3,8,9)]
+encuesta <- encuesta[!apply(encuesta, 1, function(x) any(x=="")),] 
+dim(encuesta)
+```
+
+Tras la limpieza tenemos una tabla de datos con 6 columnas y 2349 individuos. La cuál cuenta con únicamente variables categóricas y un tamaño apropiado para usarla para un análisis factorial de correspondencias.
+
+### Parte c
+
+La tabla de datos consiste en los resultados de una encuesta realizada a los participantes de una competencia en línea. Sus variables, una vez traducidas son:
+
+- **Regresión :** Dice si el usuario compite en la sección de regresión.
+
+- **Introductorio :** Dice si el usuario se encuentra en la sección introductoria de la competencia.
+
+- **Curso de Estadística :** Menciona si el usuario ha llevado un curso de estadística. Cuenta con 3 categorías: Si, Si pero no recuerdo nada y No.
+
+- **Ha usado regresión antes :** Menciona si el participante ha usado regresión antes.
+
+- **Experiencia Programando :** Dice el grado de experiencia que tiene una persona programando, tiene las categorías: Mucha experiencia,Poca experiencia, Suficiente experiencia, Ninguna experiencia.
+
+- **Motivo de interés en ciencia de datos :** Menciona el motivo por el que el participante se interesa en la ciencia de datos. Cuenta con las categorías: Quiero conseguir un trabajo en ciencia de datos, Me ayudaría en mi trabajo actual y Curiosidad.
+
+La dimensión final de la tabla de datos es de 6 columnas y 2349 filas.
+
+### Parte d
+
+```{r}
+str(encuesta)
+summary(encuesta)
+```
+
+
+### Parte e
+
+Eligimos las variables "Curso de Estadística" y "Experiencia Programando".
+```{r}
+var = table(encuesta$`Curso de Estadística`,encuesta$`Experiencia Programando`)
+var
+```
+
+### Parte f
+
+Primero vemos el gráfico de varianzas explicadas por los ejes:
+```{r}
+res.ca <- CA(var, graph = F)
+fviz_screeplot(res.ca, addlabels = TRUE, title = "Gráfico de Varianzas Explicadas")
+```
+
+Observamos que en este caso tenemos la situación de que con los primeros dos ejes el porcentaje de varianzas explicados es del 100%, con lo que podemos hacer una representación certera de los datos. Ahora el gráfico de variables nos muestra que:
+
+```{r}
+fviz_ca_biplot(res.ca, repel = TRUE)
+```
+
+Podemos observar cosas muy interesantes de este gráfico. Primero notamos una correlación entre recordar poco del curso de estadística con la poca o ninguna experiencia. Similarmente aquellos que si llevaron un curso y cuentan con experiencia si recuerdan su contenido. Ahora podemos ver el gráfico de cosenos cuadrados:
+
+```{r}
+
+fviz_cos2(res.ca, choice = "row", axes = 1:2, title = "Cosenos cuadrados de las filas a la dimensión 1-2")
+fviz_cos2(res.ca, choice = "col", axes = 1:2, title = "Cosenos cuadrados de las columnas a la dimensión 1-2")
+```
+
+Vemos que en ambos casos vale uno como era de esperarse del hecho de que los porcentajes de variancias explicadas eran de 100%. Finalmente tenemos los gráficos de contribuciones de las filas y las columnas, analizamos primero el de las filas:
+```{r}
+fviz_contrib(res.ca, choice = "row", axes = 1, top = 10, title = "Gráfico de Contribuciones de las filas a la dimensión 1")
+fviz_contrib(res.ca, choice = "row", axes = 2, top = 10, title = "Gráfico de Contribuciones de las filas a la dimensión 2")
+```
+
+Vemos que para el primer eje y el de mayor importancia ya que tiene un porcentaje de varianzas explicadas de 99% la variable "No" resultó ser la más importante. Finalmente tenemos las contribuciones de las columnas:
+```{r}
+fviz_contrib(res.ca, choice = "col", axes = 1, top = 10, title = "Gráfico de Contribuciones de las columnas a la dimensión 1")
+fviz_contrib(res.ca, choice = "col", axes = 2, top = 10, title = "Gráfico de Contribuciones de las columnas a la dimensión 2")
+```
+
+En este caso la que variable que más contribuyó a las columnas fue la variable "Suficiente Experiencia".
+
+### Parte g
+
+Para esta sección eligimos las variables "Curso de Estadística", "Experiencia Programando" y "Motivo de inteŕes en ciencia de datos". Calculamos la matríz de Burt de la manera usual.
+
+```{r}
+estadistica <- dummy.data.frame(encuesta["Curso de Estadística"], sep = ".")
+progra <- dummy.data.frame(encuesta["Experiencia Programando"],sep = ".")
+motivo <- dummy.data.frame(encuesta["Motivo de interés en ciencia de datos"], sep = ".")
+estadistica <-as.matrix(estadistica)
+progra <- as.matrix(progra)
+motivo <- as.matrix(motivo)
+B11 <- t(estadistica) %*% estadistica
+B12 <- t(estadistica) %*% progra
+B13 <- t(estadistica) %*% motivo
+FB1 <- cbind(B11,B12,B13)
+
+B21 <- t(progra) %*% estadistica
+B22 <- t(progra) %*% progra
+B23 <- t(progra) %*% motivo
+FB2 <- cbind(B21,B22,B23)
+
+B31 <- t(motivo) %*% estadistica
+B32 <- t(motivo) %*% progra
+B33 <- t(motivo) %*% motivo
+FB3 <- cbind(B31,B32,B33)
+matriz.burt <- rbind(FB1,FB2,FB3)
+```
+
+### Parte h
+
+Primero vemos el gráfico de varianzas explicadas por los ejes:
+```{r}
+res.mca1 <- CA(matriz.burt, graph = F)
+fviz_screeplot(res.mca1, addlabels = TRUE, title = "Gráfico de Varianzas Explicadas")
+```
+
+Vemos que en este caso los primeros componentes todos tienen un valor relativamente cercano. Esto nos indica que a la hora de usar este análisis factorial de correspondencias deberíamos analizar múltiples ejes. Analizando los ejes 1,2 primero vemos que:
+
+
+```{r}
+fviz_ca_row(res.mca1, axes = c(1,2))
+```
+
+Vemos que se observan los mismos fenomenos que en primer análisis factorial de correspondencias que realizamos solo con dos variables. En este caso al  agregar la tercer variable podemos apreciar información extra. Vemos que dentro del conjunto de personas con poca experiencia programando y que han llevado cursos de estadistica pero no recuerdan sucede que muchos quieren conseguir un trabajo en ciencia de datos, lo cuál explica porque se interesan en participar en este tipo de compatencias. Vemos que también tenemos un conjunto que se interesa en la ciencia de datos por curiosidad que tiene correlación con no no tener experiencia programando y mientras que aquellos a los que les ayudaría con su trabajo no muestran muchas correlaciones en estos ejes. Al tantear con otros ejes no pudimos obtener más información que la que inferimos de este primer gráfico. Ahora analizando los gráficos de cosenos cuadrados:
+
+
+
+```{r}
+fviz_cos2(res.mca1, choice = "row", axes = 1:2, title = "Cosenos cuadrados de las filas a la dimensión 1-2")
+fviz_cos2(res.mca1, choice = "col", axes = 1:2, title = "Cosenos cuadrados de las columnas a la dimensión 1-2")
+```
+
+Vemos que los gráficos son idénticos y que casi todas las variables tienen una represntación por encima de 0.3 salvo las 3 últimas. Por lo que las variables estaban relativamente bien representadas en el gráfico que analizamos arriba.
+
+```{r}
+fviz_contrib(res.mca1, choice = "row", axes = 1, top = 10, title = "Gráfico de Contribuciones de las filas a la dimensión 1")
+fviz_contrib(res.mca1, choice = "row", axes = 2, top = 10, title = "Gráfico de Contribuciones de las filas a la dimensión 2")
+```
+
+Del gráfico de contribuciones de las filas en la primera dimensión vemos que las categorías de no haber llevado un curso de estadística, no tener experiencia programando y tener curiosidad por la ciencia de datos fueron los que más contribuciones tuvieron para las filas. Mientras que para la segunda dimensión tenemos que hay 4 variables importantes que fueron no recordar el curso de estadística, no haber llevado un curso de estadística, buscar un trabajo en ciencia de datos y ayudar a su trabajo actual son las de mayor influencia.
+
+```{r}
+fviz_contrib(res.ca, choice = "col", axes = 1, top = 10, title = "Gráfico de Contribuciones de las columnas a la dimensión 1")
+fviz_contrib(res.ca, choice = "col", axes = 2, top = 10, title = "Gráfico de Contribuciones de las columnas a la dimensión 2")
+```
+
+Para el gŕafico de contribuciones de las columnas en la primera dimensión vemos que las variables importantes fueron tener suficiente experiencia o ninguna, mientras que en las segunda dimensión fue tener mucha o poca experiencia.
+
+### Parte i
+
+Comenzamos analizando el gráfico de varianzas explicadas por los ejes.
+```{r}
+res.mca2 <- MCA(encuesta[c("Motivo de interés en ciencia de datos","Experiencia Programando","Curso de Estadística")],graph = FALSE)
+fviz_screeplot(res.mca2, addlabels = TRUE, ylim = c(0, 45),title = "Gráfico de Varianzas Explicadas")
+```
+
+Vemos que todos los ejes tienen porcentajes de varianza explicada similar. Veamos el gŕafico de variables:
+```{r}
+fviz_mca_var(res.mca2, choice = "mca.cor",repel = TRUE,title = "Gráfico de Variables")
+```
+
+Podemos observar como existe una fuerte correlación entre las variables "Motivo de interés en ciencia de datos" y "Curso de Estadística", lo que nos muestra que el interesarse en ciencia de datos está relacionado con conocer de estadística. Mientras que tener experiencia programando no parece ser un factor tan importante. Si observamos el gráfico de variables con modalidades tenemos:
+```{r}
+fviz_mca_var(res.mca2, choice = "var.cat",repel = TRUE,title = "Gráfico de Variables con Modalidades")
+```
+
+Esta vez logramos obtener correlaciones que no observábamos como que conseguir un trabajo en ciencia de datos está correlacionado con tener poca experiencia programando o no recordar los cursos de estadística. Vemos ahora algo más esperado que las personas con curiosidad por aprender generalmente no tienen experiencia y no han llevado cursos.  Finalmente tenemos el último caso que es quiénes tienen experiencia y aprenden ciencia de datos para ayudarse en su trabajo actual. Veamos ahora el gráfico de cosenos cuadrados:
+```{r}
+fviz_cos2(res.mca2, choice = "var", axes = 1:2,title = "Gráfico de Cosenos cuadrádos para la dimensión 1-2")
+```
+
+Vemos que todas salvo las últimas cuatravo variables tienen cosenos cuadrados superiores a 0.3 por lo que se pueden considerar bien representadas, de estas cuatro solo las últimas dos se encuentran mal representadas pero debido a que han sido analizadas con anteriordad no ameritan analizar otros ejes. 
+```{r}
+#fviz_mca_biplot(res.mca,repel = TRUE)
+```
+
+El biplot no me corrió, no sé a que se debe esto, sin embargo su información ya ha sido analizada por medio de sus componentes. Ahora veamos los gráficos de contribuciones totales de las variables:
+```{r}
+fviz_contrib(res.mca2, choice = "var",axes = 1:2, top = 15, title = "Contribuciones totales de las variables")#Total
+```
+
+La principal observación es que en general la expriencia no tuvo muchas contribuciones salvo cuando esta no existe. 
+
+## Clustering Analysis
+
+
+### Parte a
+
+Para esta parte decidimos utilizar una tabla de datos que cuenta con la información de los videojuegos más vendidos hasta el 2016. Esta cuenta con 16627 filas y 12 columnas antes de la limpieza. Vamos a usar solamente los primeros 1500 juegos para el análisis con Clustering Jerárquico.
+
+### Parte b
+
+Para esta parte incluimos la traducción de los datos también:
+```{r}
+ventas <- read.table("vgsales.csv", sep = ",", dec = ".",header = TRUE, quote = "" ,fill = TRUE ,stringsAsFactors = FALSE)
+
+ventas = ventas[,-c(1,4,11,12)]
+ventas = ventas[!duplicated(ventas$Name),]
+row.names(ventas) = ventas$Name
+ventas$NA_Sales <- as.numeric(ventas$NA_Sales)
+ventas$EU_Sales <- as.numeric(ventas$EU_Sales)
+ventas$JP_Sales <- as.numeric(ventas$JP_Sales)
+
+
+ventas = na.omit(ventas)
+dim(ventas)
+ventas$Genre[ventas$Genre == "Sports"] <- "Deportes"
+ventas$Genre[ventas$Genre == "Platform"] <- "Plataformas"
+ventas$Genre[ventas$Genre == "Racing"] <- "Carreras"
+ventas$Genre[ventas$Genre == "Role-Playing"] <- "Juegos de Rol"
+ventas$Genre[ventas$Genre == "Puzzle"] <- "Rompecabezas"
+ventas$Genre[ventas$Genre == "Misc"] <- "Miscelaneo"
+ventas$Genre[ventas$Genre == "Shooter"] <- "Disparos"
+ventas$Genre[ventas$Genre == "Simulation"] <- "Simulación"
+ventas$Genre[ventas$Genre == "Action"] <- "Acción"
+ventas$Genre[ventas$Genre == "Fighting"] <- "Peleas"
+ventas$Genre[ventas$Genre == "Adventure"] <- "Aventura"
+ventas$Genre[ventas$Genre == "Strategy"] <- "Estrategia"
+colnames(ventas) = c("Nombre","Plataforma","Género","Editor","Ventas_NA","Ventas_EU","Ventas_JP","Otras_Ventas")
+head(ventas)
+dim(ventas)
+
+
+ventas1 =  ventas[1:1600,]
+
+head(ventas1)
+dim(ventas1)
+```
+Decidimos eliminar las variables "Total Sales" ya que esta era solamente la suma de otras variables. La variable año ya que esta no tiene interés para el análisis, la variable ranking ya que solo nos interesa la cantidad de ventas y la última variable que era vacía.
+
+### Parte c
+
+La tabla de datos consiste en la cantidad de ventas de los videojuegos más vendidos hasta el 2016. Cuenta con las siguientes variables
+
+- **Nombre :** El nombre del juego.
+
+- **Plataforma :** La plataforma en que se jugaba el juego.
+
+- **Editor :** La empresa que punlicó el juego.
+
+- **Ventas_NA :** El número de ventas en norteamerica en millones de ventas.
+
+- **Ventas_EU :** El número de ventas en Europa en millones de ventas.
+
+- **Ventas_JP :** El número de ventas en Japón en millones de ventas.
+
+- **OPtras_Ventas:** El número de ventas en otros lugares en millones de ventas.
+
+La dimensión final de la tabla de datos es de 8 columnas y 1600 filas.
+
+### Parte d
+```{r}
+summary(ventas1)
+str(ventas1)
+```
+
+### Parte e
+```{r}
+ventas1.numeric = ventas1 %>% keep(is.numeric)
+head(ventas1.numeric)
+modelo <- hclust(dist(ventas1.numeric), method = "ward.D")
+plot(modelo, labels =  FALSE, hang = -1)
+rect.hclust(modelo, k=3, border="red")
+```
+
+Decidimos usar 3 clusters tras probar con otras opciones y ver que esta era la que mejor información nos daba. Usamos el método de Ward porque los otros generaban un solo cluster muy grande y los otros muy pequeños.
+```{r}
+centroide <- function(num.cluster, datos, clusters) {
+  ind <- (clusters == num.cluster)
+  return(colMeans(datos[ind,]))
+}
+
+grupos <- cutree(modelo, k=3)
+cluster1<-centroide(1,ventas1.numeric,grupos)
+cluster2<-centroide(2,ventas1.numeric,grupos)
+cluster3<-centroide(3,ventas1.numeric,grupos)
+cluster1
+centros<-rbind(cluster1,cluster2,cluster3)
+color <- c("#ECD078","#D95B43","#C02942","#542437")
+barplot(t(centros),beside=TRUE,col=color, cex.names = 0.8, main = "Ventas en cada región por cluster",ylab = "Millones de ventas")
+legenda <-legend("topright", legend=c("Ventas NA 1","Ventas EU 2","Ventas JP","Otras Ventas"),
+                 seg.len=-1,pch=21,bty="n" ,lwd=3, y.intersp=1, 
+                 horiz=FALSE,col=color)
+```
+
+La primera observación que hacemos de este gráfico es que en el primer cluster se concentran los juegos con las mayores ventas en todas las regiones, después los que vendieron de segundos en todas las regiones y el tercero fueron los que vendieron menos en todas las regiones. Si hacemos un gŕafico de tip araña podemos observar el mismo efecto:
+
+```{r}
+centros<-as.data.frame(centros)
+maximos<-apply(centros,2,max)
+minimos<-apply(centros,2,min)
+centros<-rbind(minimos,centros)
+centros<-rbind(maximos,centros)
+
+radarchart(as.data.frame(centros),maxmin=TRUE,axistype=4,axislabcol="slategray4",
+           centerzero=FALSE,seg=8, cglcol="gray67",
+           pcol=color,plty=1,plwd=5,title="Comparación de clústeres")
+
+legenda <-legend("topright",legend=c("Cluster 1","Cluster 2","Cluster 3"),
+                 seg.len=-1.4,title="Clústeres",pch=21,bty="n" ,lwd=3, y.intersp=1, 
+                 horiz=FALSE,col=color)
+```
+ 
+Como se esperaba. Finalmente si graficamos las variables cualitativas por cluster vemos que analizando la plataforma tenemos:
+```{r}
+NDatos <- cbind(ventas1, grupos)
+cluster <- NDatos$grupo
+sel.cluster1 <- match(cluster, 1, 0)
+sel.cluster2 <- match(cluster, 2, 0)
+sel.cluster3 <- match(cluster, 3, 0)
+Datos.Cluster2 <- NDatos[sel.cluster2 > 0,]
+Datos.Cluster1 <- NDatos[sel.cluster1 > 0,]
+Datos.Cluster3 <- NDatos[sel.cluster3 > 0,]
+
+x <- table(Datos.Cluster1$Plataforma)
+barplot(x)
+
+```
+
+Vemos que para los del primer cluster la plataforma más usada fue el Wii, DS y Gameboy. Las que son consolas de Nintendo, entonces notamos que Nintendo es la empresa lider. Para el segundo cluster:
+```{r}
+x <- table(Datos.Cluster2$Plataforma)
+barplot(x)
+
+```
+
+Vemos que en este se concentran los juegos del Xbox y PlayStation, los cuales son las otras alternativas a el Wii, que era muy fuerte en el primer cluster.
+```{r}
+
+x <- table(Datos.Cluster3$Plataforma)
+barplot(x)
+```
+
+En el último cluster tenemos que son principalmente juegos de PS2 una plataforma un poco vieja dado el muestreo pero que tuvo gran auge en su momento. Ahora si analizamos el tipo de juegos preferidos entre los usuarios de cada cluster:
+
+```{r}
+x <- table(Datos.Cluster1$Género)
+barplot(x)
+```
+
+Vemos que los juegos de plataforma resultan ser los más vendidos.
+
+
+```{r}
+x <- table(Datos.Cluster2$Género)
+barplot(x)
+```
+
+Vemos que para este cluster principalmente los juegos de acción y disparos y algunos otros como miscelaneos fueron el fuerte de este cluster.
+```{r}
+x <- table(Datos.Cluster3$Género)
+barplot(x)
+```
+
+En este último tenemos más presencia de juegos de acción, carreras y disparos.
+
+## Pregunta 3
+
+### Parte a,b,c,d
+Para esta parte repetimos el mismo proceso pero usamos solo los primeros 6000 datos en lugar de 1600 toda la tabla de datos resultante tras la limpieza.
+```{r}
+ventas =  ventas[1:6000,]
+summary(ventas)
+str(ventas)
+dim(ventas)
+```
+Vemos que el tamaño final de la tabla es 6000 filas con 8 columnas.
+
+### Parte e
+
+```{r}
+grupos<-kmeans(ventas1.numeric,centers=3,iter.max=100)
+plot(ventas1.numeric,pch=19)
+points(grupos$centers,pch=19,col="#FF9C5B",cex=2)
+points(ventas1.numeric,col=grupos$cluster+1,pch=19)
+```
+
